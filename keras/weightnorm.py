@@ -73,20 +73,24 @@ class SGDWithWeightnorm(SGD):
 
 # adapted from keras.optimizers.Adam
 class AdamWithWeightnorm(Adam):
-    def get_updates(self, params, constraints, loss):
+    def get_updates(self, loss, params):
         grads = self.get_gradients(loss, params)
         self.updates = [K.update_add(self.iterations, 1)]
 
         lr = self.lr
         if self.initial_decay > 0:
-            lr *= (1. / (1. + self.decay * self.iterations))
+            lr *= (1. / (1. + self.decay * K.cast(self.iterations,
+                                                  K.dtype(self.decay))))
 
-        t = self.iterations + 1
+        t = K.cast(self.iterations, K.floatx()) + 1
         lr_t = lr * K.sqrt(1. - K.pow(self.beta_2, t)) / (1. - K.pow(self.beta_1, t))
 
-        shapes = [K.get_variable_shape(p) for p in params]
-        ms = [K.zeros(shape) for shape in shapes]
-        vs = [K.zeros(shape) for shape in shapes]
+        #shapes = [K.get_variable_shape(p) for p in params]
+        #ms = [K.zeros(shape) for shape in shapes]
+        #vs = [K.zeros(shape) for shape in shapes]
+
+        ms = [K.zeros(K.int_shape(p), dtype=K.dtype(p)) for p in params]
+        vs = [K.zeros(K.int_shape(p), dtype=K.dtype(p)) for p in params]
         self.weights = [self.iterations] + ms + vs
 
         for p, g, m, v in zip(params, grads, ms, vs):
@@ -119,9 +123,15 @@ class AdamWithWeightnorm(Adam):
                 self.updates.append(K.update(v, v_t))
 
                 # if there are constraints we apply them to V, not W
-                if p in constraints:
-                    c = constraints[p]
+                # Apply constraints.
+                if getattr(p, 'constraint', None) is not None:
+                    #new_p = p.constraint(new_p)
+                    c = p.constraint(new_p)
                     new_V_param = c(new_V_param)
+
+                #if p in constraints:
+                #    c = constraints[p]
+                #    new_V_param = c(new_V_param)
 
                 # wn param updates --> W updates
                 add_weightnorm_param_updates(self.updates, new_V_param, new_g_param, p, V_scaler)
@@ -136,9 +146,11 @@ class AdamWithWeightnorm(Adam):
 
                 new_p = p_t
                 # apply constraints
-                if p in constraints:
-                    c = constraints[p]
-                    new_p = c(new_p)
+
+                # Apply constraints.
+                if getattr(p, 'constraint', None) is not None:
+                    new_p = p.constraint(new_p)
+
                 self.updates.append(K.update(p, new_p))
         return self.updates
 
@@ -180,7 +192,6 @@ def add_weightnorm_param_updates(updates, new_V_param, new_g_param, W, V_scaler)
 
 # data based initialization for a given Keras model
 def data_based_init(model, input):
-
     # input can be dict, numpy array, or list of numpy arrays
     if type(input) is dict:
         feed_dict = input
@@ -196,9 +207,9 @@ def data_based_init(model, input):
     # get all layer name, output, weight, bias tuples
     layer_output_weight_bias = []
     for l in model.layers:
-        if hasattr(l, 'W') and hasattr(l, 'b'):
+        if hasattr(l, 'kernel') and hasattr(l, 'bias'):
             assert(l.built)
-            layer_output_weight_bias.append( (l.name,l.get_output_at(0),l.W,l.b) ) # if more than one node, only use the first
+            layer_output_weight_bias.append( (l.name,l.get_output_at(0),l.kernel,l.bias) ) # if more than one node, only use the first
 
     # iterate over our list and do data dependent init
     sess = K.get_session()

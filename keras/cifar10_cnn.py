@@ -10,6 +10,7 @@ from keras.models import Sequential
 from keras.layers import Dense, Dropout, Activation, Flatten
 from keras.layers import Convolution2D, MaxPooling2D
 from keras.utils import np_utils
+from keras.optimizers import Adam
 
 batch_size = 32
 nb_classes = 10
@@ -60,9 +61,10 @@ model.add(Dense(nb_classes))
 model.add(Activation('softmax'))
 
 # let's train the model using SGD + momentum (how original). EDIT: now with weight normalization, so slightly more original ;-)
-from weightnorm import SGDWithWeightnorm
-sgd_wn = SGDWithWeightnorm(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
-model.compile(loss='categorical_crossentropy',optimizer=sgd_wn,metrics=['accuracy'])
+from weightnorm import AdamWithWeightnorm
+adam = AdamWithWeightnorm(lr=0.001, decay=1e-6)
+#adam = Adam(lr=0.01)
+model.compile(loss='categorical_crossentropy',optimizer=adam,metrics=['accuracy'])
 
 # data based initialization of parameters
 from weightnorm import data_based_init
